@@ -1,26 +1,51 @@
-FROM richarvey/nginx-php-fpm:3.1.6
+FROM composer:2 AS vendor
+
+WORKDIR /app
+
+COPY composer.json composer.lock ./
+
+RUN composer install \
+    --no-dev \
+    --no-interaction \
+    --no-progress \
+    --prefer-dist \
+    --optimize-autoloader
+
+FROM node:20 AS frontend
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+
+RUN npm ci
 
 COPY . .
 
-# Image Configuration
-ENV SKIP_COMPOSER 1
-ENV WEBROOT /var/www/html/public
-ENV PHP_ERRORS_STDERR 1
-ENV RUN_SCRIPTS 1
-ENV REAL_IP_HEADER 1
+RUN npm run build
 
-# Laravel Configuration
-ENV APP_ENV production
-ENV APP_DEBUG false
-ENV LOG_CHANNEL stderr
+FROM php:8.3-cli
 
-# Allow Composer to run as root
-ENV COMPOSER_ALLOW_SUPERUSER 1
+WORKDIR /var/www/html
 
-# Install Node.js & NPM to build production assets (Vite)
-RUN apk add --no-cache nodejs npm && \
-    npm install && \
-    npm run build && \
-    rm -rf node_modules
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git unzip libsqlite3-dev libzip-dev libonig-dev \
+    && docker-php-ext-install pdo_sqlite mbstring zip \
+    && rm -rf /var/lib/apt/lists/*
 
-CMD ["/start.sh"]
+COPY --from=vendor /app/vendor ./vendor
+COPY . .
+COPY --from=frontend /app/public/build ./public/build
+
+RUN mkdir -p database storage bootstrap/cache \
+    && touch database/database.sqlite
+
+RUN php artisan optimize:clear
+RUN chmod -R 775 storage bootstrap/cache
+
+ENV APP_ENV=production
+ENV APP_DEBUG=false
+ENV LOG_CHANNEL=stderr
+
+EXPOSE 10000
+
+CMD ["sh", "-c", "php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=${PORT:-10000}"]

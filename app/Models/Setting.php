@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Schema;
 
 class Setting extends Model
 {
@@ -17,12 +18,20 @@ class Setting extends Model
 
     public static function get(string $key, mixed $default = null): mixed
     {
+        if (! Schema::hasTable('settings')) {
+            return $default;
+        }
+
         $setting = static::find($key);
         return $setting ? $setting->value : $default;
     }
 
     public static function set(string $key, mixed $value): void
     {
+        if (! Schema::hasTable('settings')) {
+            return;
+        }
+
         static::updateOrCreate(['key' => $key], ['value' => $value]);
     }
 
@@ -32,6 +41,10 @@ class Setting extends Model
      */
     public static function isOpen(): bool
     {
+        if (! Schema::hasTable('settings')) {
+            return true;
+        }
+
         // Manual override: force open
         if ((bool) static::get('is_force_opened', false)) {
             return true;
@@ -57,6 +70,10 @@ class Setting extends Model
      */
     public static function closedMessage(): string
     {
+        if (! Schema::hasTable('settings')) {
+            return 'We are currently closed. We open at 1:00 PM and close at 10:00 PM.';
+        }
+
         $msg = static::get(
             'closed_message',
             'We are currently closed. We open at {opening_time} and close at {closing_time}.'
